@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC
 from cgi import FieldStorage
 from contextlib import suppress
+import mimetypes
+import os
 from random import choice
 
 from twisted.web.resource import Resource
@@ -46,72 +48,80 @@ class BaseHttpServer(BaseServer, ABC):
         def __init__(self, *args, hp_server: BaseHttpServer = None, **kwargs):
             super().__init__(*args, **kwargs)
             self.hp_server = hp_server
+            self.files = {
+                os.path.relpath(os.path.join(dir, file), self.hp_server.data_dir)
+                for (dir, _, files) in os.walk(self.hp_server.data_dir)
+                for file in files
+            }
             self.headers = {}
 
         def render(self, request):
-            client_ip, headers = get_headers_and_ip_from_request(request, self.hp_server.options)
-
-            with suppress(Exception):
-                log_data = {
-                    "action": "connection",
-                    "src_ip": client_ip,
-                    "src_port": request.getClientAddress().port,
-                }
-                if "capture_commands" in self.hp_server.options:
-                    log_data["data"] = headers
-                self.hp_server.log(log_data)
+            client_ip, headers = get_headers_and_ip_from_request(
+                request, self.hp_server.options
+            )
 
             if self.hp_server.mocking_server != "":
                 request.responseHeaders.removeHeader("Server")
-                request.responseHeaders.addRawHeader("Server", self.hp_server.mocking_server)
-
-            if request.method in (b"GET", b"POST"):
-                self.hp_server.log(
-                    {
-                        "action": request.method.decode(),
-                        "src_ip": client_ip,
-                        "src_port": request.getClientAddress().port,
-                    }
+                request.responseHeaders.addRawHeader(
+                    "Server", self.hp_server.mocking_server
                 )
 
-            if request.method == b"GET":
-                if (
-                    request.uri == b"/login.html"
-                    and self.hp_server.username != ""
-                    and self.hp_server.password != ""
-                ):
+            log_data = {
+                "action": request.method.decode(),
+                "path": request.path,
+                "args": request.args,
+                "src_ip": client_ip,
+                "src_port": request.getClientAddress().port,
+            }
+            if "capture_commands" in self.hp_server.options:
+                log_data["headers"] = {
+                    check_bytes(k): check_bytes(v)
+                    for k, v in request.getAllHeaders().items()
+                }
+            self.hp_server.log(log_data)
+
+            if request.method != b"GET":
+                request.setResponseCode(405)
+                return b"<html><body>Method not allowed</body></html>"
+
+            file = request.path.decode("utf-8").strip("/")
+
+            if file == "":
+                file = "index.html"
+
+            if file == "sitemap.xml":
+                request.responseHeaders.addRawHeader(
+                    "Content-Type", "application/xml; charset=utf-8"
+                )
+                return (
+                    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+                    + b'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                    + "\n".join(
+                        f"<url><loc>/{file}</loc></url>" for file in self.files
+                    ).encode("utf-8")
+                    + b"</urlset>"
+                )
+
+            if file not in self.files:
+                file = file + ".html"
+
+            if file not in self.files:
+                request.setResponseCode(404)
+                if "404.html" in self.files:
                     request.responseHeaders.addRawHeader(
                         "Content-Type", "text/html; charset=utf-8"
                     )
-                    return self.login_file
+                    with open(
+                        os.path.join(self.hp_server.data_dir, "404.html"), "rb"
+                    ) as f:
+                        return f.read()
+                else:
+                    return b"<html><body>Not Found</body></html>"
 
-                request.responseHeaders.addRawHeader("Content-Type", "text/html; charset=utf-8")
-                return self.login_file
-
-            if request.method == b"POST":
-                self.headers = request.getAllHeaders()
-                if (
-                    request.uri in (b"/login.html", b"/")
-                    and self.hp_server.username != ""
-                    and self.hp_server.password != ""
-                ):
-                    form = FieldStorage(
-                        fp=request.content,
-                        headers=self.headers,
-                        environ={
-                            "REQUEST_METHOD": "POST",
-                            "CONTENT_TYPE": self.headers.get(
-                                b"content-type",
-                                b"application/x-www-form-urlencoded",
-                            ),
-                        },
-                    )
-                    if "username" in form and "password" in form:
-                        username = check_bytes(form["username"].value)
-                        password = check_bytes(form["password"].value)
-                        self.hp_server.check_login(
-                            username, password, client_ip, request.getClientAddress().port
-                        )
-
-            request.responseHeaders.addRawHeader("Content-Type", "text/html; charset=utf-8")
-            return self.home_file
+            typ, enc = mimetypes.guess_type(file)
+            if typ is not None:
+                if enc is not None:
+                    typ += "; " + enc
+                request.responseHeaders.addRawHeader("Content-Type", typ)
+            with open(os.path.join(self.hp_server.data_dir, file), "rb") as f:
+                return f.read()

@@ -1,0 +1,16 @@
+{
+  "logs": "file,terminal,json",
+  "logs_location": "/var/log/honeypots",
+  "honeypots": {
+    "ftp": {
+      "log_file_name": "ftp.log",
+      "options": ["capture_commands"],
+      "data_dir": "/root/hps/ftp_data"
+    },
+    "http": {
+      "log_file_name": "http.log",
+      "options": ["capture_commands"],
+      "data_dir": "/root/hps/http_data"
+    }
+  }
+}
