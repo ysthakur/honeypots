@@ -22,8 +22,8 @@ from honeypots.helper import (
 class BaseServer(ABC):
     NAME = "base"
     DEFAULT_PORT = 0
-    DEFAULT_USERNAME = "test"
-    DEFAULT_PASSWORD = "test"
+    DEFAULT_USERNAME = None
+    DEFAULT_PASSWORD = None
 
     def __init__(self, **kwargs):
         self.auto_disabled = False
@@ -148,7 +148,7 @@ class BaseServer(ABC):
         return status == "success"
 
     def _login_is_correct(self, username: str, password: str) -> bool:
-        return username == self.username and password == self.password
+        return self.username is None or username == self.username and password == self.password
 
     def log(self, log_data: dict[str, Any]):
         log_data.update(
