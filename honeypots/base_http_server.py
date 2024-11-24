@@ -69,7 +69,10 @@ class BaseHttpServer(BaseServer, ABC):
             log_data = {
                 "action": request.method.decode(),
                 "path": request.path,
-                "args": request.args,
+                "args": {
+                    param.decode(): [arg.decode() for arg in args]
+                    for param, args in request.args.items()
+                },
                 "src_ip": client_ip,
                 "src_port": request.getClientAddress().port,
             }
