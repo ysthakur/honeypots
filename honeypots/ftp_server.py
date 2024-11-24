@@ -76,6 +76,12 @@ class QFTPServer(BaseServer):
             )
 
             def requestAvatarId(self, credentials):  # noqa: N802
+                # Allow anyone to log in if no username set
+                if _q_s.username is None:
+                    if hasattr(credentials, "username"):
+                        return defer.succeed(credentials.username)
+                    else:
+                        return defer.succeed(()) # Anonymous login
                 with suppress(Exception):
                     username = check_bytes(credentials.username)
                     password = check_bytes(credentials.password)
@@ -104,7 +110,7 @@ class QFTPServer(BaseServer):
                                 "action": "command",
                                 "data": {
                                     "cmd": check_bytes(cmd.upper()),
-                                    "args": check_bytes(params),
+                                    "args": [check_bytes(param) for param in params],
                                 },
                                 "src_ip": self.transport.getPeer().host,
                                 "src_port": self.transport.getPeer().port,
@@ -143,7 +149,7 @@ class QFTPServer(BaseServer):
                 d.addCallbacks(_cbLogin, _ebLogin)
                 return d
 
-        p = Portal(CustomFTPRealm("data"), [CustomAccess()])
+        p = Portal(CustomFTPRealm(self.data_dir or "data"), [CustomAccess()])
         factory = FTPFactory(p)
         factory.protocol = CustomFTPProtocol
         factory.welcomeMessage = "ProFTPD 1.2.10"

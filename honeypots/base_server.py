@@ -57,6 +57,11 @@ class BaseServer(ABC):
             or getenv("HONEYPOTS_OPTIONS", "")
             or ""
         )
+        self.data_dir = (
+            kwargs.get("data_dir")
+            or (hasattr(self, "data_dir") and self.data_dir)
+            or None
+        )
         self.logger = set_up_error_logging()
         self._server_process: Process | None = None
 
@@ -148,7 +153,11 @@ class BaseServer(ABC):
         return status == "success"
 
     def _login_is_correct(self, username: str, password: str) -> bool:
-        return self.username is None or username == self.username and password == self.password
+        return (
+            self.username is None or
+            username == self.username
+            and password == self.password
+        )
 
     def log(self, log_data: dict[str, Any]):
         log_data.update(
